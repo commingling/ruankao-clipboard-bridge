@@ -31,6 +31,8 @@ ENV/
 
 # Bridge temporary clipboard cache
 .mac_clipboard.txt
+.clipboard-bridge.json
+.clipboard-bridge-*
 *.tmp
 *.log
 

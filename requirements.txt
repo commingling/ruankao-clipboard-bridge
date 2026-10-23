@@ -1,2 +1,2 @@
-# Windows 虚拟机端依赖
-uiautomation>=2.0.18
+# No third-party Python packages are required.
+# Install Python with Tkinter on Windows.

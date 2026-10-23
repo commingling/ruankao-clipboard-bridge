@@ -1,136 +1,96 @@
-# ⚡ 软考机考跨系统剪贴板注入助手 (Ruankao Clipboard Bridge)
+# Clipboard Bridge · 跨系统剪贴板助手
 
-<p align="center">
-  <img src="./assets/preview_assistant.png" alt="悬浮助手预览" width="360" />
-</p>
+把你选定的纯文本从 macOS 传到 Windows 剪贴板，再由你在允许粘贴的应用中手动粘贴。
 
-<p align="center">
-  <strong>专为 Mac + 虚拟机备考软考（系统分析师 / 系统架构设计师 / 信息系统项目管理师等）考生打造的跨系统剪贴板实时同步与论文一键注入神器。</strong>
-</p>
+这是一个独立的通用文本传输工具，不生成答案、不识别题目，也不定位或操作考试答题框。项目与任何考试机构、软件厂商均无隶属、认证或合作关系。仓库地址沿用早期名称，仅为保持链接有效。
 
-<p align="center">
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License" /></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.8+-green.svg" alt="Python" /></a>
-  <a href="https://github.com/commingling/ruankao-clipboard-bridge"><img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-orange.svg" alt="Platform" /></a>
-</p>
+[English](#english) · [使用边界与许可](./USE_POLICY.md) · [数据处理说明](./PRIVACY.md) · [版本变化](./CHANGELOG.md)
 
----
+## 功能
 
-## 🎯 痛点直击：为什么 Mac 考生无法在机考模拟系统中复制粘贴？
+- **手动发送**：Mac 端经本次确认后读取一次剪贴板；无后台持续监听。
+- **手动接收**：Windows 端显式加载共享文件，查看字数，需要时展开预览，再点击复制到剪贴板。
+- **普通粘贴**：在目标应用允许粘贴的地方自行使用粘贴命令。工具不寻找窗口、不模拟按键、不清空第三方编辑器。
+- **短时共享**：共享快照有效期为 120 秒，过期后接收端拒绝使用。发送进程正常运行或正常退出时尝试清理本次文件。
+- **标准库实现**：无需安装第三方 Python 包；启动器不自动下载依赖。
 
-在 Mac 上通过虚拟机（如 **Parallels Desktop** 或 **VMware Fusion**）运行官方软考机考模拟系统（`ExamClient.exe`）时，普遍会遭遇以下四个令人抓狂的问题：
+共享文件是明文，系统剪贴板也可能被其他程序、历史记录或云同步访问。只传输你有权分享的非敏感文本；完整数据流及删除限制见 [PRIVACY.md](./PRIVACY.md)。
 
-1. **禁用鼠标右键**：
-   软考机考系统为防作弊，彻底禁用了答题编辑框（Delphi `TRichViewEdit`）的鼠标右键上下文菜单，无法右键点击“粘贴”。
-2. **按键映射陷阱（`⌘V` 变成 `Win+V`）**：
-   Mac 用户习惯按下 `⌘ Command + V` 进行粘贴。但在虚拟机中，Mac 的 `⌘ Command` 键默认映射为 Windows 的 `Win 徽标键`。按下 `⌘V` 实际向 Windows 发送的是 **`Win + V`**（弹出 Windows 剪贴板历史浮窗），不仅无法粘贴，还会打断输入焦点！
-3. **虚拟机跨系统共享剪贴板偶发失灵**：
-   Parallels / VMware 的宿主机与客机剪贴板同步经常发生延迟、格式丢弃或无响应假死。
-4. **论文机考排版练习成本极高**：
-   软考论文要求 2000~2500 字，在备考阶段若无法快速将 Mac 笔记中整理好的范文贴入机考答题框，就无法真实感受机考系统的换行、字数统计与分段排版效果。
+## 快速开始
 
-**本工具正是为彻底根治这一系列痛点而生！**
+需要 macOS、Windows、Python 3（包含 Tkinter），以及双方可读写的同一个共享文件夹。Mac 导出使用硬链接原子发布，因此该目录的文件系统需支持硬链接；建议使用 Mac 本地目录，再通过虚拟机共享给 Windows。请使用自己控制的专用文件夹，避免云备份或广泛共享的目录。项目不负责配置虚拟机或网络共享。
 
----
+### 1. 获取项目
 
-## ✨ 特性亮点
-
-- **⚡ 毫秒级双端自动桥接**：在 Mac 上选中任何文本按 `⌘C`，守护进程 0.3 秒内同步至虚拟机，Windows 系统剪贴板自动刷新。
-- **🎯 精准识别机考答题框**：利用 Windows UIAutomation 自动化技术，精准定位 Delphi 核心答题区，自动区分 **【论文摘要框】**（~111px）与 **【论文正文框】**（~1036px），点击直接命中输入区域正中央。
-- **🧹 多种注入模式**：
-  - `📋 粘贴到【论文摘要框】`
-  - `📋 粘贴到【论文正文框】(追加)`
-  - `🧹 清空并覆盖粘贴到【论文正文框】`
-- **⏱️ 2 秒延时通用粘贴**：针对**案例分析**等任意非论文题型，点击后提供 2 秒倒计时，让你有充裕时间将光标点进任意作答格，倒计时结束自动填入。
-- **🪟 极简置顶小浮窗**：常驻虚拟机屏幕左上角，实时显示 Mac 剪贴板字数及文本预览，状态一目了然。
-- **⌨️ 纯键盘友好**：后台同步已自动刷新 Windows 剪贴板，在机考框内直接按下键盘左下角的 **`Control + V`** 亦可原生粘贴。
-
----
-
-## 🏗️ 架构与运行原理
-
-```mermaid
-flowchart LR
-    subgraph macOS [macOS 宿主机]
-        A["复制文本 (⌘C)"] --> B["pbpaste 剪贴板监听"]
-        B --> C["共享桥接通道 (.mac_clipboard.txt)"]
-    end
-
-    subgraph WindowsVM [Windows 虚拟机 (Parallels / VMware)]
-        C --> D["Windows 注入助手 (Tkinter 悬浮窗)"]
-        D -->|自动同步| E["Windows 系统剪贴板"]
-        D -->|一键注入| F["uiautomation 控件定位"]
-        F --> G["软考机考系统 (TRichViewEdit)"]
-        E -.->|Control + V 键盘直贴| G
-    end
-```
-
----
-
-## 🚀 快速开始
-
-### 1. 克隆本仓库
-
-在 Mac 终端中克隆：
-```bash
+```sh
 git clone https://github.com/commingling/ruankao-clipboard-bridge.git
 cd ruankao-clipboard-bridge
 ```
 
----
+### 2. 在 Mac 上发送一次
 
-### 2. Mac 端：启动剪贴板守护
+先复制一小段无敏感内容的测试文字，然后运行：
 
-在 Mac 终端运行：
-```bash
-chmod +x mac/start_mac.sh
-./mac/start_mac.sh
+```sh
+bash mac/start_mac.sh
 ```
-看到输出 `🚀 软考机考 Mac 剪贴板跨系统守护进程已启动` 即可保持终端运行或后台挂起。
 
----
+按提示确认后，程序才读取剪贴板，并在项目根目录生成 `.clipboard-bridge.json`。保留终端运行，在 120 秒内接收；到期或正常中断会尝试删除本次快照。
 
-### 3. Windows 虚拟机端：启动注入助手
+可以指定其他共享文件路径：
 
-1. 确保虚拟机与 Mac 共享了桌面或主目录（Parallels 默认共享 `\\Mac\Home\Desktop`）。
-2. 在虚拟机内打开本项目的 `windows` 目录。
-3. 双击运行 **`start_win.bat`**。
-   - 脚本会自动检测 Python 环境；
-   - 首次运行若缺少 `uiautomation` 会自动通过国内源快速安装；
-   - 启动后屏幕左上角将出现置顶悬浮助手。
+```sh
+bash mac/start_mac.sh --file /path/to/shared/.clipboard-bridge.json
+```
 
----
+Mac 端路径也可通过 `CLIPBOARD_BRIDGE_FILE` 环境变量设置。两端必须选择同一实际文件；Mac 与 Windows 对该文件的路径写法通常不同。
 
-### 4. 享受丝滑粘贴体验！
+### 3. 在 Windows 上接收
 
-1. 在 Mac 上的任意笔记软件（Obsidian、Typora、VS Code 等）选中论文内容，按 **`⌘C`**。
-2. 切到 Windows 虚拟机：
-   - 浮窗即刻更新：`🟢 Mac 已同步: 2180 字` 并显示内容预览。
-3. **点击按钮一键填入**：
-   - 点击 `📋 粘贴到【论文摘要框】`
-   - 点击 `📋 粘贴到【论文正文框】`
-   - 做案例题时点击 `⏱️ 2秒后粘贴到当前光标处` 并在 2 秒内点进答题框。
+在共享项目目录中双击 `windows/start_win.bat`。如果项目拷贝到了另一处，在界面中选择 Mac 刚刚生成的共享文件，或运行：
 
----
+```powershell
+python windows/ruankao_paste_assistant.py --file "Z:\shared\.clipboard-bridge.json"
+```
 
-## 💡 踩坑与常见问题 (FAQ)
+手动加载文件，确认你有权使用文本且目标应用允许粘贴，然后点击复制到 Windows 剪贴板。最后切换到自己的文本编辑器等应用，手动粘贴。
 
-### Q1：为什么我在虚拟机里按键盘 `Command + V` 弹出了剪贴板历史？
-**A**：在 Mac 键盘上，`Command (⌘)` 键被虚拟机映射为 Windows 的 `Win 徽标键`。
-因此：
-- 按 `⌘ + V` ＝ `Win + V`（触发 Windows 剪贴板历史面板）。
-- **正确按键方式**：按下 Mac 键盘最左下角的 **`Control` 键 + `V`**，即可直接粘贴。
+接收端拒绝过期、格式不符及超大内容，并检测读取期间或加载后的文件变更。文件不提供发送方身份认证，无法识别首次加载前的替换，请使用可信共享目录。正文上限为 1 MiB（按 UTF-8 字节计），完整文件上限为 2 MiB。请保持两端系统时间准确。
 
-### Q2：提示“未找到机考作答窗口”怎么办？
-**A**：请确认已在机考练习系统中进入了具体的题目作答界面（窗口类名为 `TfrmMainCenter`）。若处于登录或试卷选择界面，先进入答题界面即可。
+### 4. 结束与残留处理
 
-### Q3：如果共享路径不同，如何自定义共享文件路径？
-**A**：
-- **Mac 端**：支持指定文件参数：`python3 sync_mac_clipboard.py -f /path/to/shared/file.txt`
-- **Windows 端**：默认会自动扫描 `\\Mac\Home\Desktop`、`C:\Mac\Home\Desktop`、当前目录及上级目录。也可直接在 `ruankao_paste_assistant.py` 中修改 `MAC_CLIP_FILE` 变量。
+正常导出会在 120 秒后尝试删除本次文件。异常退出、断电、文件权限变化可能留下文件；确认不再需要后，在 Mac 执行：
 
----
+```sh
+bash mac/start_mac.sh --clear
+# 使用自定义路径时：
+bash mac/start_mac.sh --file /path/to/shared/.clipboard-bridge.json --clear
+```
 
-## 📄 开源协议
+如果导出提示目标已存在，先核对它是否为不再需要的本工具快照，再清理后重试。异常中断还可能留下同目录的 `.clipboard-bridge-<随机值>.tmp` 明文临时文件；`--clear` 只处理指定的 JSON 快照，临时文件需在停止导出后核对并手动删除。删除共享文件不会清除已经复制到 Windows 的内容、剪贴板历史或外部备份。
 
-本项目采用 [MIT 许可证](./LICENSE)。欢迎各位考友 Star ⭐️、提 Issue 或 PR！祝各位软考高项、系分、架构考生顺利通关！🎉
+## 使用范围
+
+适用于你拥有或获授权的文本，以及允许复制粘贴的个人笔记、普通编辑器和开发测试环境。使用前遵守目标软件的许可和操作规则。
+
+本项目不提供考试作答、自动提交、规避监考、解除禁用粘贴或绕过访问限制的功能和适配支持。普通复制粘贴是否允许，应由具体环境和规则决定，不能仅凭工具名称判断。
+
+源码使用标准 [MIT License](./LICENSE)。使用说明与维护者支持范围不改写 MIT，也不构成对第三方软件、内容或标识的授权。任何许可证或免责声明均不能保证免除依法应承担的责任。
+
+## 从旧版迁移
+
+本次调整移除了针对特定考试客户端的控件定位、自动粘贴及覆盖操作。原有脚本文件名暂时保留，但行为已变为通用手动传输。旧的 `.mac_clipboard.txt` 不再被读取。
+
+升级前先停止旧的 Mac 监听进程和 Windows 助手。自行检查并清理旧共享目录中的 `.mac_clipboard.txt`，避免旧进程继续运行。新的快照过期机制不会清理旧版文件，也不会删除已经公开的历史提交或他人的副本。
+
+## English
+
+Clipboard Bridge transfers a text snapshot from macOS to the Windows clipboard through a shared file. Confirm each export on the Mac, explicitly load it on Windows, then copy and paste manually into an application that permits it.
+
+The current version has no exam-window detection, answer generation, simulated keystrokes, automatic editor replacement, or continuous clipboard monitoring. The repository URL and script filenames are retained for continuity. This independent project has no affiliation with examination bodies or software vendors.
+
+Snapshots are plaintext, expire after 120 seconds, and are removed on a best-effort basis by the sending process. Expiration is an application check, not encryption or secure erasure. Copied text can remain in the operating system clipboard, clipboard history, or backups. Use a trusted shared folder and non-sensitive text you are authorized to transfer.
+
+Run `bash mac/start_mac.sh` on macOS and `windows/start_win.bat` on Windows. Both must refer to the same shared `.clipboard-bridge.json` file; use `--file` to select a different path. Python with Tkinter is required; no third-party Python packages are needed. The export directory must support hard links; a local Mac folder shared with the VM is recommended.
+
+The source code remains under the standard MIT License. Project support boundaries do not add restrictions to that license, authorize third-party content, or override applicable law.
