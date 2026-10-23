@@ -1,0 +1,2 @@
+# Windows 虚拟机端依赖
+uiautomation>=2.0.18
