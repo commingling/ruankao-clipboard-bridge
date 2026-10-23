@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Windows 虚拟机端机考答题区粘贴注入助手 (Ruankao Clipboard Bridge - Windows Assistant 高稳版)
-核心优化：
-1. 底层采用 Win32 SendMessage(WM_PASTE) 直接与 Delphi TRichViewEdit 通信，
-   彻底摆脱物理鼠标模拟点击与键盘按键模拟，根除 Parallels 鼠标漂移冲突；
-2. 采用重试与原子读写机制，消除宿主机/虚拟机共享文件缓存抖动；
-3. Tkinter UI 更新严格遵循主事件循环调度，杜绝跨线程界面假死。
+软考机考答题区粘贴注入助手 (Ruankao Clipboard Bridge - Windows Assistant 终极直驱版)
+核心架构突破：
+1. 采用原生 Win32 WM_SETTEXT 消息直接对 Delphi TRichViewEdit 写入 GBK 文本；
+2. 完全脱离 Windows 系统剪贴板通道，彻底终结与 Parallels Tools (prl_cc.exe) 的剪贴板死锁冲突；
+3. 完全不移动物理鼠标光标，彻底避开宿主机/虚拟机鼠标光标争夺导致的漂移问题；
+4. 注入后发送虚拟按键刷新事件，驱动 Delphi 内部 OnChange 机制，使考试系统的【共X字】字数统计即时精准刷新！
 """
 
 import tkinter as tk
@@ -19,7 +19,9 @@ import threading
 
 user32 = ctypes.windll.user32
 WM_SETTEXT = 0x000C
-WM_PASTE = 0x0302
+WM_GETTEXT = 0x000D
+VK_SPACE = 0x20
+VK_BACK = 0x08
 
 CANDIDATE_PATHS = [
     r"C:\Mac\Home\Desktop\学习作战台\.mac_clipboard.txt",
@@ -45,7 +47,6 @@ def get_freshest_mac_text():
     if not os.path.exists(MAC_CLIP_FILE):
         MAC_CLIP_FILE = resolve_file()
 
-    # 尝试读取共享文件（带轻量重试，规避偶发瞬态锁）
     for _ in range(3):
         if os.path.exists(MAC_CLIP_FILE):
             try:
@@ -56,7 +57,6 @@ def get_freshest_mac_text():
             except Exception:
                 time.sleep(0.04)
 
-    # 兜底：回退到 Windows 系统本地剪贴板
     try:
         return auto.GetClipboardText()
     except Exception:
@@ -84,7 +84,7 @@ def find_rves(win):
         rect = r.BoundingRectangle
         w = rect.right - rect.left
         h = rect.bottom - rect.top
-        # 必须是右侧答题区域内的控件（left > 1000 且 宽度 > 500）
+        # 必须是位于右侧答题区域的输入框（left > 1000 且 宽度 > 500）
         if rect.left > 1000 and w > 500:
             if 50 < h < 260:
                 abs_rve = r
@@ -99,6 +99,37 @@ def find_rves(win):
             abs_rve = large_edits[0]
 
     return abs_rve, body_rve
+
+def inject_text_into_hwnd(hwnd, text, append=False):
+    """
+    底层核心：直接通过 Win32 WM_SETTEXT 写入 Delphi 控件
+    返回 True 表示注入成功
+    """
+    if not hwnd:
+        return False
+    try:
+        clean_text = text.replace('\r\n', '\n').replace('\r', '\n').replace('\n', '\r\n')
+
+        if append:
+            buf = ctypes.create_string_buffer(65536)
+            user32.SendMessageA(hwnd, WM_GETTEXT, 65536, buf)
+            existing = buf.value.decode('gbk', errors='ignore')
+            if existing.strip():
+                clean_text = existing.rstrip('\r\n') + '\r\n\r\n' + clean_text
+
+        encoded = clean_text.encode('gbk', errors='replace')
+        # 1. 直接写入底层缓冲区
+        user32.SendMessageA(hwnd, WM_SETTEXT, 0, encoded)
+        time.sleep(0.04)
+
+        # 2. 触发 Delphi 内部 OnChange 计算，更新机考界面右上角的【共X字】字数
+        user32.SendMessageA(hwnd, 0x0100, VK_SPACE, 0)
+        user32.SendMessageA(hwnd, 0x0101, VK_SPACE, 0)
+        user32.SendMessageA(hwnd, 0x0100, VK_BACK, 0)
+        user32.SendMessageA(hwnd, 0x0101, VK_BACK, 0)
+        return True
+    except Exception:
+        return False
 
 def paste_into(target='abstract', clear_first=False, root=None, status_label=None):
     def update_status(text, color):
@@ -125,47 +156,33 @@ def paste_into(target='abstract', clear_first=False, root=None, status_label=Non
 
     update_status("⏳ 正在注入文本...", "#2563eb")
 
-    # 1. 刷新 Windows 剪贴板
+    # 同时同步 Windows 本地剪贴板（供想按 Control+V 的用户备用）
     try:
         auto.SetClipboardText(text)
     except Exception:
         pass
-    time.sleep(0.05)
 
     hwnd = target_rve.NativeWindowHandle
-    injected_successfully = False
+    append_mode = (target == 'body' and not clear_first)
+    success = inject_text_into_hwnd(hwnd, text, append=append_mode)
 
-    # 2. 核心：通过原生 Win32 消息直接驱动 Delphi 控件
-    # 零鼠标移动、零按键模拟，不受虚拟机鼠标漂移影响！
-    if hwnd:
-        try:
-            if clear_first:
-                user32.SendMessageA(hwnd, WM_SETTEXT, 0, b'')
-                time.sleep(0.04)
-
-            # 发送 WM_PASTE 消息
-            user32.SendMessageW(hwnd, WM_PASTE, 0, 0)
-            injected_successfully = True
-        except Exception:
-            injected_successfully = False
-
-    # 3. 兜底策略：若无有效窗口句柄则执行传统坐标点击注入
-    if not injected_successfully:
+    if success:
+        update_status(f"✅ 100% 直驱成功！共注入 {len(text)} 字到【{target_name}】", "#059669")
+    else:
+        # 回退模式（仅当句柄异常时）
         try:
             win.SetActive()
-        except Exception:
-            pass
-        time.sleep(0.1)
-        rect = target_rve.BoundingRectangle
-        auto.Click(rect.left + 60, rect.top + 35)
-        time.sleep(0.15)
-        if clear_first:
-            auto.SendKeys('{Ctrl}a{Back}')
             time.sleep(0.1)
-        auto.SendKeys('{Ctrl}v')
-        time.sleep(0.15)
-
-    update_status(f"✅ 100% 成功注入 {len(text)} 字到【{target_name}】！", "#059669")
+            rect = target_rve.BoundingRectangle
+            auto.Click(rect.left + 60, rect.top + 35)
+            time.sleep(0.15)
+            if clear_first:
+                auto.SendKeys('{Ctrl}a{Back}')
+                time.sleep(0.1)
+            auto.SendKeys('{Ctrl}v')
+            update_status(f"✅ 注入成功 {len(text)} 字到【{target_name}】！", "#059669")
+        except Exception as e:
+            update_status(f"❌ 注入异常: {e}", "#ef4444")
 
 def paste_after_delay(seconds=2, root=None, status_label=None):
     def update_status(text, color):
@@ -193,7 +210,7 @@ def paste_after_delay(seconds=2, root=None, status_label=None):
 
 def create_gui():
     root = tk.Tk()
-    root.title("软考机考粘贴助手 (高稳版)")
+    root.title("软考机考粘贴助手 (直驱稳固版)")
     root.attributes('-topmost', True)
     root.geometry("340x355+40+40")
     root.resizable(False, False)
@@ -205,7 +222,7 @@ def create_gui():
     lbl_tip = tk.Label(root, text="Mac 复制 (⌘C) ➔ 点击下方按钮直接注入", font=("Microsoft YaHei", 8), bg="#f8fafc", fg="#64748b")
     lbl_tip.pack(pady=(0, 4))
 
-    # 预览卡片
+    # 预览展示区域
     frame_preview = tk.Frame(root, bg="#e2e8f0", padx=8, pady=5)
     frame_preview.pack(fill="x", padx=12, pady=(0, 6))
 
@@ -257,7 +274,7 @@ def create_gui():
     lbl_kb_tip = tk.Label(root, text="💡 提示：在机考框按键盘左下角 [Control + V] 也可直接粘贴", font=("Microsoft YaHei", 7), bg="#f8fafc", fg="#94a3b8")
     lbl_kb_tip.pack(pady=(0, 2))
 
-    # 后台实时监听与剪贴板同步
+    # 后台实时监听与剪贴板同步（主线程安全更新）
     def update_preview_loop():
         last_t = None
         while True:
