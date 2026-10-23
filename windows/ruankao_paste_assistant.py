@@ -1,27 +1,42 @@
 # -*- coding: utf-8 -*-
 """
-软考机考答题区粘贴注入助手 (Ruankao Clipboard Bridge - Windows Assistant 终极直驱版)
+软考机考答题区粘贴注入助手 (Ruankao Clipboard Bridge - Windows Assistant 全域直驱版)
 核心架构突破：
-1. 采用原生 Win32 WM_SETTEXT 消息直接对 Delphi TRichViewEdit 写入 GBK 文本；
-2. 完全脱离 Windows 系统剪贴板通道，彻底终结与 Parallels Tools (prl_cc.exe) 的剪贴板死锁冲突；
-3. 完全不移动物理鼠标光标，彻底避开宿主机/虚拟机鼠标光标争夺导致的漂移问题；
-4. 注入后发送虚拟按键刷新事件，驱动 Delphi 内部 OnChange 机制，使考试系统的【共X字】字数统计即时精准刷新！
+1. 【反遮挡装甲】：自动降级全屏机考系统的 WS_EX_TOPMOST 霸权属性，确保浮窗永远置顶在机考窗口之上，绝不被遮盖！
+2. 【全域全局快捷键】：
+   - F8: 一键注入【论文摘要框】
+   - F9: 一键追加注入【论文正文框】
+   - F10: 一键清空并覆盖注入【论文正文框】
+   - Option+V (Alt+V): 一键注入当前光标处
+3. 【底座内存直驱】：采用原生 Win32 WM_SETTEXT 消息，零剪贴板中转，彻底终结 Parallels 剪贴板死锁冲突！
+4. 【即时字数联动】：注入后发送微脉冲，驱动机考系统右上角【共X字】字数统计即时刷新！
 """
 
 import tkinter as tk
 from tkinter import messagebox
 import uiautomation as auto
 import ctypes
+import ctypes.wintypes
 import time
 import os
 import sys
 import threading
 
 user32 = ctypes.windll.user32
+kernel32 = ctypes.windll.kernel32
+
 WM_SETTEXT = 0x000C
 WM_GETTEXT = 0x000D
 VK_SPACE = 0x20
 VK_BACK = 0x08
+
+# Hotkey Constants
+MOD_ALT = 0x0001
+MOD_CONTROL = 0x0002
+VK_F8 = 0x77
+VK_F9 = 0x78
+VK_F10 = 0x79
+VK_V = 0x56
 
 CANDIDATE_PATHS = [
     r"C:\Mac\Home\Desktop\学习作战台\.mac_clipboard.txt",
@@ -91,7 +106,6 @@ def find_rves(win):
             elif h > 400:
                 body_rve = r
 
-    # 兜底：若只有单个输入框（如案例分析）
     if not abs_rve and not body_rve:
         large_edits = [r for r in rves if (r.BoundingRectangle.right - r.BoundingRectangle.left) > 400]
         if large_edits:
@@ -101,10 +115,7 @@ def find_rves(win):
     return abs_rve, body_rve
 
 def inject_text_into_hwnd(hwnd, text, append=False):
-    """
-    底层核心：直接通过 Win32 WM_SETTEXT 写入 Delphi 控件
-    返回 True 表示注入成功
-    """
+    """底层核心：直接通过 Win32 WM_SETTEXT 写入 Delphi 控件"""
     if not hwnd:
         return False
     try:
@@ -156,7 +167,6 @@ def paste_into(target='abstract', clear_first=False, root=None, status_label=Non
 
     update_status("⏳ 正在注入文本...", "#2563eb")
 
-    # 同时同步 Windows 本地剪贴板（供想按 Control+V 的用户备用）
     try:
         auto.SetClipboardText(text)
     except Exception:
@@ -169,7 +179,6 @@ def paste_into(target='abstract', clear_first=False, root=None, status_label=Non
     if success:
         update_status(f"✅ 100% 直驱成功！共注入 {len(text)} 字到【{target_name}】", "#059669")
     else:
-        # 回退模式（仅当句柄异常时）
         try:
             win.SetActive()
             time.sleep(0.1)
@@ -184,7 +193,7 @@ def paste_into(target='abstract', clear_first=False, root=None, status_label=Non
         except Exception as e:
             update_status(f"❌ 注入异常: {e}", "#ef4444")
 
-def paste_after_delay(seconds=2, root=None, status_label=None):
+def paste_current_focus(root=None, status_label=None):
     def update_status(text, color):
         if root and status_label:
             root.after(0, lambda: status_label.config(text=text, fg=color))
@@ -199,32 +208,26 @@ def paste_after_delay(seconds=2, root=None, status_label=None):
     except Exception:
         pass
 
-    for s in range(seconds, 0, -1):
-        update_status(f"⏳ 请在 {s} 秒内把光标点进目标答题框...", "#2563eb")
-        time.sleep(1)
-
-    update_status("⏳ 正在粘贴...", "#2563eb")
     auto.SendKeys('{Ctrl}v')
-    time.sleep(0.2)
     update_status(f"✅ 成功粘贴 {len(text)} 字到当前光标处！", "#059669")
 
 def create_gui():
     root = tk.Tk()
-    root.title("软考机考粘贴助手 (直驱稳固版)")
+    root.title("软考机考粘贴助手 (全域直驱版)")
     root.attributes('-topmost', True)
-    root.geometry("340x355+40+40")
+    root.geometry("340x365+40+40")
     root.resizable(False, False)
     root.configure(bg="#f8fafc")
 
     lbl_title = tk.Label(root, text="Mac 剪贴板一键注入助手", font=("Microsoft YaHei", 11, "bold"), bg="#f8fafc", fg="#0f172a")
-    lbl_title.pack(pady=(8, 2))
+    lbl_title.pack(pady=(6, 1))
 
-    lbl_tip = tk.Label(root, text="Mac 复制 (⌘C) ➔ 点击下方按钮直接注入", font=("Microsoft YaHei", 8), bg="#f8fafc", fg="#64748b")
-    lbl_tip.pack(pady=(0, 4))
+    lbl_tip = tk.Label(root, text="Mac 复制 (⌘C) ➔ 点击下方按钮或按快捷键", font=("Microsoft YaHei", 8), bg="#f8fafc", fg="#64748b")
+    lbl_tip.pack(pady=(0, 3))
 
-    # 预览展示区域
-    frame_preview = tk.Frame(root, bg="#e2e8f0", padx=8, pady=5)
-    frame_preview.pack(fill="x", padx=12, pady=(0, 6))
+    # 预览卡片
+    frame_preview = tk.Frame(root, bg="#e2e8f0", padx=8, pady=4)
+    frame_preview.pack(fill="x", padx=12, pady=(0, 5))
 
     lbl_sync_info = tk.Label(frame_preview, text="Mac 剪贴板: 监听中...", font=("Microsoft YaHei", 8, "bold"), bg="#e2e8f0", fg="#334155", anchor="w")
     lbl_sync_info.pack(fill="x")
@@ -235,46 +238,46 @@ def create_gui():
     btn_frame = tk.Frame(root, bg="#f8fafc")
     btn_frame.pack(fill="x", padx=12)
 
-    lbl_status = tk.Label(root, text="就绪：Mac 复制后点下方按钮", font=("Microsoft YaHei", 8), bg="#f8fafc", fg="#64748b")
+    lbl_status = tk.Label(root, text="就绪：Mac 复制后点下方按钮 (或按 F8/F9)", font=("Microsoft YaHei", 8), bg="#f8fafc", fg="#64748b")
 
     btn_abs = tk.Button(
-        btn_frame, text="📋 粘贴到【论文摘要框】", font=("Microsoft YaHei", 9, "bold"),
+        btn_frame, text="📋 粘贴到【摘要框】 [快捷键: F8]", font=("Microsoft YaHei", 9, "bold"),
         bg="#2563eb", fg="white", activebackground="#1d4ed8", activeforeground="white",
-        relief="flat", padx=10, pady=5, cursor="hand2",
+        relief="flat", padx=10, pady=4, cursor="hand2",
         command=lambda: threading.Thread(target=paste_into, args=('abstract', False, root, lbl_status)).start()
     )
     btn_abs.pack(fill="x", pady=2)
 
     btn_body = tk.Button(
-        btn_frame, text="📋 粘贴到【论文正文框】(追加)", font=("Microsoft YaHei", 9, "bold"),
+        btn_frame, text="📋 粘贴到【正文框】(追加) [快捷键: F9]", font=("Microsoft YaHei", 9, "bold"),
         bg="#059669", fg="white", activebackground="#047857", activeforeground="white",
-        relief="flat", padx=10, pady=5, cursor="hand2",
+        relief="flat", padx=10, pady=4, cursor="hand2",
         command=lambda: threading.Thread(target=paste_into, args=('body', False, root, lbl_status)).start()
     )
     btn_body.pack(fill="x", pady=2)
 
     btn_clear_body = tk.Button(
-        btn_frame, text="🧹 清空并覆盖粘贴到【正文框】", font=("Microsoft YaHei", 8),
+        btn_frame, text="🧹 清空并覆盖粘贴到【正文框】 [快捷键: F10]", font=("Microsoft YaHei", 8),
         bg="#d97706", fg="white", activebackground="#b45309", activeforeground="white",
         relief="flat", padx=6, pady=3, cursor="hand2",
         command=lambda: threading.Thread(target=paste_into, args=('body', True, root, lbl_status)).start()
     )
     btn_clear_body.pack(fill="x", pady=2)
 
-    btn_delay = tk.Button(
-        btn_frame, text="⏱️ 2秒后粘贴到当前光标处 (案例/通用题型)", font=("Microsoft YaHei", 8),
+    btn_cur = tk.Button(
+        btn_frame, text="⚡ 粘贴到当前光标处 [快捷键: Option+V / Alt+V]", font=("Microsoft YaHei", 8),
         bg="#64748b", fg="white", activebackground="#475569", activeforeground="white",
         relief="flat", padx=6, pady=3, cursor="hand2",
-        command=lambda: threading.Thread(target=paste_after_delay, args=(2, root, lbl_status)).start()
+        command=lambda: threading.Thread(target=paste_current_focus, args=(root, lbl_status)).start()
     )
-    btn_delay.pack(fill="x", pady=2)
+    btn_cur.pack(fill="x", pady=2)
 
-    lbl_status.pack(pady=(4, 2))
+    lbl_status.pack(pady=(3, 1))
 
-    lbl_kb_tip = tk.Label(root, text="💡 提示：在机考框按键盘左下角 [Control + V] 也可直接粘贴", font=("Microsoft YaHei", 7), bg="#f8fafc", fg="#94a3b8")
+    lbl_kb_tip = tk.Label(root, text="💡 提示：按键盘 F8 注入摘要，F9 注入正文，Option+V 直贴", font=("Microsoft YaHei", 7), bg="#f8fafc", fg="#94a3b8")
     lbl_kb_tip.pack(pady=(0, 2))
 
-    # 后台实时监听与剪贴板同步（主线程安全更新）
+    # 后台剪贴板监听
     def update_preview_loop():
         last_t = None
         while True:
@@ -297,6 +300,55 @@ def create_gui():
 
     t_sync = threading.Thread(target=update_preview_loop, daemon=True)
     t_sync.start()
+
+    # 核心装甲：防遮挡守卫线程 (将机考全屏窗口降级，确保本浮窗永远置顶最前)
+    def anti_occlusion_guard():
+        while True:
+            try:
+                for w in auto.GetRootControl().GetChildren():
+                    if w.ClassName == 'TfrmMainCenter':
+                        exam_hwnd = w.NativeWindowHandle
+                        ex_style = user32.GetWindowLongA(exam_hwnd, -20)
+                        if ex_style & 0x00000008:
+                            user32.SetWindowPos(exam_hwnd, 1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)
+                        break
+
+                root_hwnd = int(root.wm_frame(), 16) if hasattr(root, 'wm_frame') else None
+                if not root_hwnd:
+                    root_hwnd = user32.FindWindowW(None, "软考机考粘贴助手 (全域直驱版)")
+                if root_hwnd:
+                    user32.SetWindowPos(root_hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)
+            except Exception:
+                pass
+            time.sleep(0.6)
+
+    t_guard = threading.Thread(target=anti_occlusion_guard, daemon=True)
+    t_guard.start()
+
+    # 全局快捷键守护线程
+    def global_hotkey_loop():
+        user32.RegisterHotKey(None, 101, 0, VK_F8)
+        user32.RegisterHotKey(None, 102, 0, VK_F9)
+        user32.RegisterHotKey(None, 103, 0, VK_F10)
+        user32.RegisterHotKey(None, 104, MOD_ALT, VK_V)
+
+        msg = ctypes.wintypes.MSG()
+        while user32.GetMessageW(ctypes.byref(msg), None, 0, 0):
+            if msg.message == 0x0312:  # WM_HOTKEY
+                hk_id = msg.wParam
+                if hk_id == 101:
+                    paste_into('abstract', False, root, lbl_status)
+                elif hk_id == 102:
+                    paste_into('body', False, root, lbl_status)
+                elif hk_id == 103:
+                    paste_into('body', True, root, lbl_status)
+                elif hk_id == 104:
+                    paste_current_focus(root, lbl_status)
+            user32.TranslateMessage(ctypes.byref(msg))
+            user32.DispatchMessageW(ctypes.byref(msg))
+
+    t_hk = threading.Thread(target=global_hotkey_loop, daemon=True)
+    t_hk.start()
 
     root.mainloop()
 
